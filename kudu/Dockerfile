@@ -1,4 +1,4 @@
-FROM buildpack-deps:jessie-curl
+FROM buildpack-deps:jessie-curl as main
 MAINTAINER Nazim Lala <naziml@microsoft.com>
 
 ENV DEBIAN_FRONTEND noninteractive
@@ -332,12 +332,13 @@ RUN apt-get install -y apt-transport-https lsb-release ca-certificates \
   && wget -O /etc/apt/trusted.gpg.d/php.gpg https://packages.sury.org/php/apt.gpg \
   && sh -c 'echo "deb https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php.list' \ 
   && apt-get update \
-  && apt-get install -y php7.2 php7.2-common php7.2-cli php7.2-fpm php7.2-mysql php7.2-pgsql php7.2-curl php7.2-json php7.2-bcmath php7.2-dom php7.2-gd php7.2-gmp php7.2-imagick php7.2-imap php7.2-intl php7.2-ldap php7.2-mbstring php7.2-odbc php7.2-SimpleXML php7.2-soap php7.2-sqlite3 php7.2-tidy php7.2-wddx php7.2-xmlrpc php7.2-xmlwriter php7.2-xsl php7.2-zip
+  && apt-get install -y php7.2 php7.2-common php7.2-cli php7.2-fpm php7.2-mysql php7.2-pgsql php7.2-curl php7.2-json php7.2-bcmath php7.2-dom php7.2-gd php7.2-gmp php7.2-imagick php7.2-imap php7.2-intl php7.2-ldap php7.2-mbstring php7.2-odbc php7.2-SimpleXML php7.2-soap php7.2-sqlite3 php7.2-tidy php7.2-wddx php7.2-xmlrpc php7.2-xmlwriter php7.2-xsl php7.2-zip php7.2-xml
 
 # Microsoft Drivers for PHP for SQL Server
 RUN apt-get update \
-  && apt-get install -y php7.2-dev php-pear \
-  && pecl install sqlsrv pdo_sqlsrv \
+  && apt-get install -y php7.2-dev php-pear 
+
+RUN pecl install sqlsrv \
   && echo extension=pdo_sqlsrv.so >> `php --ini | grep "Scan for additional .ini files" | sed -e "s|.*:\s*||"`/30-pdo_sqlsrv.ini \
   && echo extension=sqlsrv.so >> `php --ini | grep "Scan for additional .ini files" | sed -e "s|.*:\s*||"`/20-sqlsrv.ini \
   && apt-get install -y libapache2-mod-php7.2 \
@@ -379,160 +380,52 @@ RUN curl -fL -o /usr/local/go/bin/dep $DEP_DOWNLOAD_URL \
   && echo "$DEP_DOWNLOAD_SHA /usr/local/go/bin/dep" | sha256sum -c - \
   && chmod +x /usr/local/go/bin/dep
 
-# Python 
-# ensure local python is preferred over distribution python
-ENV PATH /usr/local/bin:$PATH
+# Install Python prerequisites
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        tk-dev \
+        uuid-dev \
+ && rm -rf /var/lib/apt/lists/*
+# https://github.com/docker-library/python/issues/147
+ENV PYTHONIOENCODING UTF-8
 
-# http://bugs.python.org/issue19846
-# > At the moment, setting "LANG=C" on a Linux system *fundamentally breaks Python 3*, and that's not OK.
-ENV LANG C.UTF-8
+# Build Python 3.6.6
+FROM buildpack-deps:stable AS python3.6.6-build
+WORKDIR /usr/src/python
+ENV PYTHON_VERSION=3.6.6
+ENV GPG_KEY=0D96DF4D4110E5C43FBFB17F2D347EA6AA65421D
+ENV PIP_VERSION=18.0
+COPY images/build/python-build.sh /
+RUN chmod +x /python-build.sh
+RUN /python-build.sh
 
-# runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-		tcl \
-		tk \
-    libssl-dev \
-	&& rm -rf /var/lib/apt/lists/*
+# Build Python 3.7.0
+FROM buildpack-deps:stable AS python3.7.0-build
+WORKDIR /usr/src/python
+ENV PYTHON_VERSION=3.7.0
+ENV GPG_KEY=0D96DF4D4110E5C43FBFB17F2D347EA6AA65421D
+ENV PIP_VERSION=18.0
+COPY images/build/python-build.sh /
+RUN chmod +x /python-build.sh
+RUN /python-build.sh
 
-ENV GPG_KEY 0D96DF4D4110E5C43FBFB17F2D347EA6AA65421D
-ENV PYTHON_VERSION 3.6.6
-
+# Install Python
+FROM main
+COPY --from=python3.6.6-build /opt /opt
+COPY --from=python3.7.0-build /opt /opt
 RUN set -ex \
-        && buildDeps=' \
-                dpkg-dev \
-                tcl-dev \
-                tk-dev \
-        ' \
-        && apt-get update && apt-get install -y $buildDeps --no-install-recommends && rm -rf /var/lib/apt/lists/* \
-        \
-        && wget -O python.tar.xz "https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz" \
-        && wget -O python.tar.xz.asc "https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz.asc" \
-        && export GNUPGHOME="$(mktemp -d)" \
-        && gpg --keyserver ha.pool.sks-keyservers.net --recv-keys "$GPG_KEY" \
-        && gpg --batch --verify python.tar.xz.asc python.tar.xz \
-        && rm -rf "$GNUPGHOME" python.tar.xz.asc \
-        && mkdir -p /usr/src/python3.6 \
-        && tar -xJC /usr/src/python3.6 --strip-components=1 -f python.tar.xz \
-        && rm python.tar.xz \
-        \
-        && cd /usr/src/python3.6 \
-        && gnuArch="$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)" \
-        && ./configure \
-                --build="$gnuArch" \
-                --enable-loadable-sqlite-extensions \
-                --enable-shared \
-                --with-system-expat \
-                --with-system-ffi \
-                --without-ensurepip \
-        && make -j "$(nproc)" \
-        && make install \
-        && ldconfig \
-        \
-        && apt-get purge -y --auto-remove $buildDeps \
-        \
-        && find /usr/local -depth \
-                \( \
-                        \( -type d -a \( -name test -o -name tests \) \) \
-                        -o \
-                        \( -type f -a \( -name '*.pyc' -o -name '*.pyo' \) \) \
-                \) -exec rm -rf '{}' + \
-        && rm -rf /usr/src/python3.6
-
-
-ENV PYTHON_VERSION 3.7.0
+ && echo /opt/python/3.6.6/lib >> /etc/ld.so.conf.d/python.conf \
+ && echo /opt/python/3.7.0/lib >> /etc/ld.so.conf.d/python.conf \
+ && ldconfig
 RUN set -ex \
-	&& buildDeps=' \
-		dpkg-dev \
-		tcl-dev \
-		tk-dev \
-	' \
-	&& apt-get update && apt-get install -y $buildDeps --no-install-recommends && rm -rf /var/lib/apt/lists/* \
-	\
-	&& wget -O python.tar.xz "https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz" \
-	&& wget -O python.tar.xz.asc "https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz.asc" \
-	&& export GNUPGHOME="$(mktemp -d)" \
-	&& gpg --keyserver ha.pool.sks-keyservers.net --recv-keys "$GPG_KEY" \
-	&& gpg --batch --verify python.tar.xz.asc python.tar.xz \
-	&& rm -rf "$GNUPGHOME" python.tar.xz.asc \
-	&& mkdir -p /usr/src/python \
-	&& tar -xJC /usr/src/python --strip-components=1 -f python.tar.xz \
-	&& rm python.tar.xz \
-	\
-	&& cd /usr/src/python \
-	&& gnuArch="$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)" \
-	&& ./configure \
-		--build="$gnuArch" \
-		--enable-loadable-sqlite-extensions \
-		--enable-shared \
-		--with-system-expat \
-		--with-system-ffi \
-		--without-ensurepip \
-	&& make -j "$(nproc)" \
-	&& make install \
-	&& ldconfig \
-	\
-	&& apt-get purge -y --auto-remove $buildDeps \
-	\
-	&& find /usr/local -depth \
-		\( \
-			\( -type d -a \( -name test -o -name tests \) \) \
-			-o \
-			\( -type f -a \( -name '*.pyc' -o -name '*.pyo' \) \) \
-		\) -exec rm -rf '{}' + \
-	&& rm -rf /usr/src/python
-
-# make some useful symlinks that are expected to exist
-RUN cd /usr/local/bin \
-	&& ln -s idle3 idle \
-	&& ln -s pydoc3 pydoc \
-	&& ln -s python3 python \
-	&& ln -s python3-config python-config
-
-# if this is called "PIP_VERSION", pip explodes with "ValueError: invalid truth value '<VERSION>'"
-ENV PYTHON_PIP_VERSION 18.0
-
-RUN set -ex; \
-	\
-	wget -O get-pip.py 'https://bootstrap.pypa.io/get-pip.py'; \
-	\
-	python3.6 get-pip.py \
-		--disable-pip-version-check \
-		--no-cache-dir \
-		"pip==$PYTHON_PIP_VERSION" \
-	; \
-	pip --version; \
-	\
-	find /usr/local -depth \
-		\( \
-			\( -type d -a \( -name test -o -name tests \) \) \
-			-o \
-			\( -type f -a \( -name '*.pyc' -o -name '*.pyo' \) \) \
-		\) -exec rm -rf '{}' +; \
-	rm -f get-pip.py
-
-
-
-RUN set -ex; \
-        \
-        wget -O get-pip.py 'https://bootstrap.pypa.io/get-pip.py'; \
-        \
-        python get-pip.py \
-                --disable-pip-version-check \
-                --no-cache-dir \
-                "pip==$PYTHON_PIP_VERSION" \
-        ; \
-        pip --version; \
-        \
-        find /usr/local -depth \
-                \( \
-                        \( -type d -a \( -name test -o -name tests \) \) \
-                        -o \
-                        \( -type f -a \( -name '*.pyc' -o -name '*.pyo' \) \) \
-                \) -exec rm -rf '{}' +; \
-        rm -f get-pip.py
-
-
-RUN pip3 install virtualenv
+ && ln -s 3.6.6 /opt/python/3.6 \
+ && ln -s 3.7.0 /opt/python/latest \
+ && ln -s 3.7.0 /opt/python/3.7 \
+ && ln -s 3.7 /opt/python/3
+RUN set -ex \
+ && cd /usr/local/bin \
+ && cp -sn /opt/python/2/bin/* . \
+ && cp -sn /opt/python/3/bin/* .
 
 # Install Kudu
 COPY kudu.conf /tmp

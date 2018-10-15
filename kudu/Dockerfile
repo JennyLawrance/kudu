@@ -1,3 +1,9 @@
+FROM appsvctest/php-build-5.6:latest as php5.6-build
+FROM appsvctest/php-build-7.0:latest as php7.0-build
+FROM appsvctest/php-build-7.2:latest as php7.2-build
+FROM appsvctest/python-3.6-build:latest as python-3.6-build
+FROM appsvctest/python-3.7-build:latest as python-3.7-build
+
 FROM buildpack-deps:jessie-curl as main
 MAINTAINER Nazim Lala <naziml@microsoft.com>
 
@@ -306,50 +312,55 @@ RUN mkdir /var/nuget \
   && rm -rf /tmp/NuGetScratch \
   && find /var/nuget -type d -exec chmod 777 {} \;
 
-# PHP5.6
-RUN apt-get update \
-  && apt-get install -y apt-transport-https lsb-release ca-certificates \
-  && wget -O /etc/apt/trusted.gpg.d/php.gpg https://packages.sury.org/php/apt.gpg \
-  && sh -c 'echo "deb https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php.list' \ 
-  && apt-get update \
-  && apt-get install -y --no-install-recommends php5-cli php5.6-zip php5.6-mbstring php5.6-xml php5-mysql php5-pgsql php5-curl php5-json php5-gd php5-gmp php5-imagick php5-imap php5-intl php5-ldap php5.6-mbstring php5-odbc php5-readline php5.6-SimpleXML php5.6-soap php5-sqlite php5-tidy php5.6-wddx php5-xmlrpc php5.6-xmlwriter php5-xsl
-
 # install apache2
 RUN apt-get install -y apache2 
-
-# mcrypt
-RUN apt-get install -y --no-install-recommends php5-mcrypt \
-  && php5enmod mcrypt 
-
-# PHP7
-RUN echo "deb http://deb.debian.org/debian stretch main" > /etc/apt/sources.list.d/stretch.list \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends --allow-unauthenticated php7.0-cli php7.0-zip php7.0-mbstring php7.0-xml php7.0-mysql php7.0-pgsql php7.0-curl php7.0-json \
-  && rm -f /etc/apt/sources.list.d/stretch.list
-
-# PHP7.2
-RUN apt-get install -y apt-transport-https lsb-release ca-certificates \
-  && wget -O /etc/apt/trusted.gpg.d/php.gpg https://packages.sury.org/php/apt.gpg \
-  && sh -c 'echo "deb https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php.list' \ 
-  && apt-get update \
-  && apt-get install -y php7.2 php7.2-common php7.2-cli php7.2-fpm php7.2-mysql php7.2-pgsql php7.2-curl php7.2-json php7.2-bcmath php7.2-dom php7.2-gd php7.2-gmp php7.2-imagick php7.2-imap php7.2-intl php7.2-ldap php7.2-mbstring php7.2-odbc php7.2-SimpleXML php7.2-soap php7.2-sqlite3 php7.2-tidy php7.2-wddx php7.2-xmlrpc php7.2-xmlwriter php7.2-xsl php7.2-zip php7.2-xml
-
-# Microsoft Drivers for PHP for SQL Server
-RUN apt-get update \
-  && apt-get install -y php7.2-dev php-pear 
-
-RUN pecl install sqlsrv \
-  && echo extension=pdo_sqlsrv.so >> `php --ini | grep "Scan for additional .ini files" | sed -e "s|.*:\s*||"`/30-pdo_sqlsrv.ini \
-  && echo extension=sqlsrv.so >> `php --ini | grep "Scan for additional .ini files" | sed -e "s|.*:\s*||"`/20-sqlsrv.ini \
-  && apt-get install -y libapache2-mod-php7.2 \
-  && a2dismod mpm_event \
-  && a2enmod mpm_prefork \
-  && a2enmod php7.2 \
-  && echo "extension=pdo_sqlsrv.so" >> /etc/php/7.2/apache2/conf.d/30-pdo_sqlsrv.ini \
-  && echo "extension=sqlsrv.so" >> /etc/php/7.2/apache2/conf.d/20-sqlsrv.ini 
-
-# restart apache2  
 RUN service apache2 restart
+
+# Section PHP
+RUN  apt-get update; \
+     apt-get install -y --no-install-recommends \
+     libcurl4-openssl-dev \
+     libssl-dev \
+     zlib1g-dev \
+     libpng-dev \
+     libpq-dev \
+     libc-client-dev \
+     libsqlite3-dev \
+     libgmp-dev \
+     libmcrypt-dev \
+     libldap2-dev \
+     libtidy-dev \
+     libkrb5-dev \
+     libicu-dev \
+     libedit-dev \
+     libxml2-dev \
+     libxslt-dev \
+     unixodbc-dev \
+     libmagickwand-dev \
+     dpkg-dev \
+     file \
+     g++ \
+     gcc \
+     libc-dev \
+     libsodium-dev \
+     libsodium18 \
+     && ln -s /usr/lib/x86_64-linux-gnu/libldap.so /usr/lib/libldap.so 
+
+
+RUN mkdir -p /usr/local/php/5.6
+COPY --from=php5.6-build /usr/local/php/5.6 /usr/local/php/5.6
+
+RUN mkdir -p /usr/local/php/7.0
+COPY --from=php7.0-build /usr/local/php/7.0 /usr/local/php/7.0
+
+RUN mkdir -p /usr/local/php/7.2
+COPY --from=php7.2-build /usr/local/php/7.2 /usr/local/php/7.2
+
+ENV PATH /usr/local/php/7.2/bin:$PATH
+
+ENV PHP_5_6_PATH /usr/local/php/5.6/bin
+ENV PHP_7_0_PATH /usr/local/php/7.0/bin
+ENV PHP_7_2_PATH /usr/local/php/7.2/bin
 
 # PHP Composer
 RUN php -r "copy('https://getcomposer.org/installer', '/tmp/composer-setup.php');" \
@@ -380,52 +391,45 @@ RUN curl -fL -o /usr/local/go/bin/dep $DEP_DOWNLOAD_URL \
   && echo "$DEP_DOWNLOAD_SHA /usr/local/go/bin/dep" | sha256sum -c - \
   && chmod +x /usr/local/go/bin/dep
 
-# Install Python prerequisites
-RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-        tk-dev \
-        uuid-dev \
- && rm -rf /var/lib/apt/lists/*
-# https://github.com/docker-library/python/issues/147
-ENV PYTHONIOENCODING UTF-8
+# Section PYTHON
 
-# Build Python 3.6.6
-FROM buildpack-deps:stable AS python3.6.6-build
-WORKDIR /usr/src/python
-ENV PYTHON_VERSION=3.6.6
-ENV GPG_KEY=0D96DF4D4110E5C43FBFB17F2D347EA6AA65421D
-ENV PIP_VERSION=18.0
-COPY images/build/python-build.sh /
-RUN chmod +x /python-build.sh
-RUN /python-build.sh
+RUN set -ex \
+        \
+        && savedAptMark="$(apt-mark showmanual)" \
+        && apt-get update && apt-get install -y --no-install-recommends \
+                dpkg-dev \
+                gcc \
+                libbz2-dev \
+                libc6-dev \
+                libexpat1-dev \
+                libffi-dev \
+                libgdbm-dev \
+                liblzma-dev \
+                libncursesw5-dev \
+                libreadline-dev \
+                libsqlite3-dev \
+                libssl-dev \
+                apt-transport-https \
+                lsb-release  \
+                ca-certificates \
+                make \
+                tk-dev \
+                tcl-dev \
+                uuid-dev \
+                wget \
+                xz-utils \
+                zlib1g-dev \
+# as of Stretch, "gpg" is no longer included by default
+                $(command -v gpg > /dev/null || echo 'gnupg dirmngr')
 
-# Build Python 3.7.0
-FROM buildpack-deps:stable AS python3.7.0-build
-WORKDIR /usr/src/python
-ENV PYTHON_VERSION=3.7.0
-ENV GPG_KEY=0D96DF4D4110E5C43FBFB17F2D347EA6AA65421D
-ENV PIP_VERSION=18.0
-COPY images/build/python-build.sh /
-RUN chmod +x /python-build.sh
-RUN /python-build.sh
 
-# Install Python
-FROM main
-COPY --from=python3.6.6-build /opt /opt
-COPY --from=python3.7.0-build /opt /opt
-RUN set -ex \
- && echo /opt/python/3.6.6/lib >> /etc/ld.so.conf.d/python.conf \
- && echo /opt/python/3.7.0/lib >> /etc/ld.so.conf.d/python.conf \
- && ldconfig
-RUN set -ex \
- && ln -s 3.6.6 /opt/python/3.6 \
- && ln -s 3.7.0 /opt/python/latest \
- && ln -s 3.7.0 /opt/python/3.7 \
- && ln -s 3.7 /opt/python/3
-RUN set -ex \
- && cd /usr/local/bin \
- && cp -sn /opt/python/2/bin/* . \
- && cp -sn /opt/python/3/bin/* .
+COPY --from=python-3.6-build /usr/local/python/3.6.6 /usr/local/python/3.6.6
+COPY --from=python-3.7-build /usr/local/openssl /usr/local/openssl
+COPY --from=python-3.7-build /usr/local/python/3.7.0 /usr/local/python/3.7.0
+ENV PATH /usr/local/python/3.7.0/bin:$PATH
+ENV PYTHON_3_7_PATH /usr/local/python/3.7.0/bin
+ENV PYTHON_3_6_PATH /usr/local/python/3.6.6/bin
+
 
 # Install Kudu
 COPY kudu.conf /tmp
@@ -491,11 +495,14 @@ COPY KuduStaticFiles/503.html /opt/Kudu/503.html
 COPY KuduStaticFiles/_Layout.cshtml /opt/Kudu/_Layout.cshtml
 COPY KuduStaticFiles/AppService.png /opt/Kudu/Content/Images/AppService.png
 COPY KuduStaticFiles/linux_favicon.ico /opt/Kudu/linux_favicon.ico
+COPY deploy.bash.python.template /opt/Kudu/bin/node_modules/kuduscript/lib/templates/deploy.bash.python.template
 
 RUN chmod -R 777 /home \
-  && rm -rf /tmp/*
+  && rm -rf /tmp/* 
 
 EXPOSE 8181
 
 ENTRYPOINT [ "/startup.sh" ]
 CMD [ "1002", "kudu_group", "1001", "kudu_user", "localsite" ]
+
+

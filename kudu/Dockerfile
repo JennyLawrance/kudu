@@ -282,7 +282,9 @@ ENV NUGET_PACKAGES /var/nuget
 # See https://github.com/aspnet/Tooling/blob/master/missing-template.md
 # Note that after populating the cache we need to chmod 777 every directory underneath
 # so the Kudu user can access them; this can be removed if we run Kudu as root later.
-ENV NUGET_XMLDOC_MODE skip
+ENV NUGET_XMLDOC_MODE skip \
+    DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
+    
 RUN mkdir /var/nuget \
   && chmod a+rw /var/nuget \
   && dotnet new -i "Microsoft.DotNet.Web.ProjectTemplates.1.x::1.0.0-*" \

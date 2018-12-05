@@ -24,86 +24,6 @@ RUN echo "deb http://ftp.debian.org/debian jessie-backports main" >> /etc/apt/so
 # SQL Server gem support
 RUN apt-get install -y unixodbc-dev freetds-dev freetds-bin 
 
-####
-#### GO
-####
-
-#ENV GOLANG_VERSION=1.10
-#ENV GOLANG_DOWNLOAD_URL="https://golang.org/dl/go$GOLANG_VERSION.linux-amd64.tar.gz" GOLANG_DOWNLOAD_SHA="b5a64335f1490277b585832d1f6c7f8c6c11206cba5cd3f771dcb87b98ad1a33"
-
-#RUN curl -SL $GOLANG_DOWNLOAD_URL --output golang.tar.gz \
-#  && echo "$GOLANG_DOWNLOAD_SHA golang.tar.gz" | sha256sum -c - \
-#  && tar -zxf golang.tar.gz -C /usr/local \
-#  && rm golang.tar.gz \
-#  && apt-get install -y musl-tools
-
-#ENV PATH /usr/local/go/bin:$PATH
-
-# Download Dep executable
-#ENV DEP_VERSION=0.4.1
-#ENV DEP_DOWNLOAD_URL="https://github.com/golang/dep/releases/download/v$DEP_VERSION/dep-linux-amd64" DEP_DOWNLOAD_SHA="31144e465e52ffbc0035248a10ddea61a09bf28b00784fd3fdd9882c8cbb2315"
-#RUN curl -fL -o /usr/local/go/bin/dep $DEP_DOWNLOAD_URL \
-#  && echo "$DEP_DOWNLOAD_SHA /usr/local/go/bin/dep" | sha256sum -c - \
-#  && chmod +x /usr/local/go/bin/dep
-  
-  
-####
-#### PHP
-####  
-
-# Section PHP
-#RUN  apt-get update; \
-#     apt-get install -y --no-install-recommends \
-#     libcurl4-openssl-dev \
-#     libssl-dev \
-#     zlib1g-dev \
-#     libpng-dev \
-#     libpq-dev \
-#     libc-client-dev \
-#     libsqlite3-dev \
-#     libgmp-dev \
-#     libmcrypt-dev \
-#     libldap2-dev \
-#     libtidy-dev \
-#     libkrb5-dev \
-#     libicu-dev \
-#     libedit-dev \
-#     libxml2-dev \
-#     libxslt-dev \
-#     unixodbc-dev \
-#     libmagickwand-dev \
-#     dpkg-dev \
-#     file \
-#     g++ \
-#     gcc \
-#     libc-dev \
-#     libsodium-dev \
-#     libsodium18 \
-#     && ln -s /usr/lib/x86_64-linux-gnu/libldap.so /usr/lib/libldap.so 
-
-
-#RUN mkdir -p /usr/local/php/5.6
-#COPY --from=php5.6-build /usr/local/php/5.6 /usr/local/php/5.6
-
-#RUN mkdir -p /usr/local/php/7.0
-#COPY --from=php7.0-build /usr/local/php/7.0 /usr/local/php/7.0
-
-#RUN mkdir -p /usr/local/php/7.2
-#COPY --from=php7.2-build /usr/local/php/7.2 /usr/local/php/7.2
-
-#ENV PATH /usr/local/php/7.2/bin:$PATH
-
-#ENV PHP_5_6_PATH /usr/local/php/5.6/bin
-#ENV PHP_7_0_PATH /usr/local/php/7.0/bin
-#ENV PHP_7_2_PATH /usr/local/php/7.2/bin
-
-# PHP Composer
-#RUN php -r "copy('https://getcomposer.org/installer', '/tmp/composer-setup.php');" \
-#  && php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer --quiet \
-#  && rm -f /tmp/composer-setup.php
-
-#ENV PHP_VERSION=7.2
-#ENV COMPOSER_VENDOR_DIR=/home/site/wwwroot/vendor
 
 COPY LogAnalyzer.zip TunnelExtension.zip webssh.zip ssh /tmp/
 COPY KuduStaticFiles/503.html /opt/Kudu/503.html
@@ -148,13 +68,9 @@ ENV PATH=$PATH:/root/.dotnet/tools
 RUN cd /tmp \
     && git clone https://github.com/sanchitmehta/KuduLight.git \
     && cd ./KuduLight \
-    && git checkout jennylaw-oryx \
+    && git checkout ant79-release \
     && cd ./Kudu.Services.Web \
     && dotnet publish -c Release -o /opt/Kudu \
-    && echo $(date) doing groupadd \
-    && groupadd -g "1002" "kudu_group" \
-    && echo $(date) doing useradd \
-    && useradd -u "1001" -g "kudu_group" "kudu_user" \
     && chmod 777 /opt/Kudu/Kudu.Services.Web.dll \
     && chmod -R +x /opt/Kudu/ \
     && rm -rf /tmp/*             
